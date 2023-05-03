@@ -1,26 +1,42 @@
 from air_hockey_challenge.framework.air_hockey_challenge_wrapper import AirHockeyChallengeWrapper
-from air_hockey_challenge.framework.challenge_core import ChallengeCore
-
-
-from mushroom_rl.core import Logger
-from mushroom_rl.utils.dataset import compute_episodes_length
-
-
-from air_hockey_challenge.environments.planar.hit import AirHockeyHit
 import numpy as np
-
-
 from pynput import keyboard
+from air_hockey_challenge.utils.kinematics import inverse_kinematics, forward_kinematics
 
-from air_hockey_challenge.utils.kinematics import inverse_kinematics, forward_kinematics, jacobian
+
+def justin_reward(base_env, state, action, next_state, absorbing):
+    reward_value = (state[0] - state[6]) * 2 + (1/abs(state[1] - state[7])) * 2 + absorbing * 3 + \
+        (next_state[0] - next_state[6]) * 4 + (1/abs(next_state[0] - next_state[6]))
+    return reward_value
+
+def an_reward(base_env, state, action, next_state, absorbing):
+    #state = observation
+    puck_pos, puck_vel = base_env.get_puck(state)
+    joint_pos, joint_vel = base_env.get_joints(state)
+
+
+    #punish for puck getting closer to left side of table
+    ee_pos, _ = forward_kinematics(base_env.env_info['robot']['robot_model'], base_env.env_info['robot']['robot_data'], joint_pos)
+    #ee_pos in robot frame, translate to now be in table frame
+    ee_pos[0] -= 1.51
+
+    x_dist = ee_pos[0]-puck_pos[0]
+    punish_goal = x_dist
+
+    #punish distance of end effector from 
+    # punish_distance = np.linalg.norm(ee_pos - puck_pos)
+
+    reward_value = 0
+    reward_value -= punish_goal
+    # reward_value -= punish_distance
+
+    print('\treward:',reward_value)
+    return reward_value
 
 if __name__ == '__main__':
-
-    def custom_reward_function(base_env, state, action, next_state, absorbing):
-        reward_value = (state[0] - state[6]) * 2 + (1/abs(state[1] - state[7])) * 2 + absorbing * 3 + \
-            (next_state[0] - next_state[6]) * 4 + (1/abs(next_state[0] - next_state[6]))
-        return reward_value
     
+
+    custom_reward_function=an_reward
 
     mdp = AirHockeyChallengeWrapper(env="3dof-defend", action_type="position-velocity", interpolation_order=3, custom_reward_function=custom_reward_function, debug=True)
     env = mdp.base_env
@@ -132,7 +148,6 @@ if __name__ == '__main__':
         gamma *= env.info.gamma
         J += gamma * reward
         R += reward
-        print('Reward:', reward)
         steps += 1
 
         if done or steps > env.info.horizon:
