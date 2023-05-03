@@ -46,6 +46,7 @@ class ChallengeCore(Core):
     
     
     
+#core meant for continuous action
 class CustomChallengeCore(Core):
     def __init__(self, *args, action_idx=None, **kwargs):
         if action_idx:
@@ -72,13 +73,14 @@ class CustomChallengeCore(Core):
         action = self.agent.draw_action(self._state)
         
         #custom CODE
+        print('action:',action)
         action_reshape = action.reshape(2,3)
         end_time = time.time()
         next_state, reward, absorbing, step_info = self.mdp.step(action_reshape[self.action_idx])
         step_info["computation_time"] = (end_time - start_time)
 
         self._episode_steps += 1
-
+        
         if render:
             self.mdp.render()
 
@@ -90,3 +92,6 @@ class CustomChallengeCore(Core):
         self._state = next_state
 
         return (state, action, reward, next_state, absorbing, last), step_info
+    
+
+#core meant for discrete actions

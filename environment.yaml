@@ -1,0 +1,20 @@
+name: eecs298
+channels:
+  - plotly
+  - conda-forge
+  - anaconda
+  - defaults
+dependencies:
+  - pip
+  - matplotlib-base
+  - ffmpeg
+  - cudatoolkit=11.6
+  - python=3.8
+  - pip:
+    - numpy
+    - pillow==6.1
+    - torch==2
+    - torchvision
+    - gitpython
+    - opencv-python
+    - imageio
