@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-p", "--policy", type=str, default="")
 args = parser.parse_args()
 
-with open("defend_training_data.pkl", "rb") as f:
+with open("hit_training_data.pkl", "rb") as f:
     training_data = pickle.load(f)
     obs = training_data["obs"]
     actions = training_data["actions"].reshape(training_data["actions"].shape[0],-1)
