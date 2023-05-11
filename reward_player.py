@@ -14,23 +14,40 @@ def an_reward(base_env, state, action, next_state, absorbing):
     puck_pos, puck_vel = base_env.get_puck(state)
     joint_pos, joint_vel = base_env.get_joints(state)
 
+    next_joint_pos, next_joint_vel = base_env.get_joints(next_state)
+    next_puck_pos, next_puck_vel = base_env.get_puck(next_state)
+
 
     #punish for puck getting closer to left side of table
     ee_pos, _ = forward_kinematics(base_env.env_info['robot']['robot_model'], base_env.env_info['robot']['robot_data'], joint_pos)
     #ee_pos in robot frame, translate to now be in table frame
     ee_pos[0] -= 1.51
+    punish_goal = ee_pos[0]-puck_pos[0]
 
-    x_dist = ee_pos[0]-puck_pos[0]
-    punish_goal = x_dist
 
-    #punish distance of end effector from 
-    # punish_distance = np.linalg.norm(ee_pos - puck_pos)
+    next_ee_pos, _ = forward_kinematics(base_env.env_info['robot']['robot_model'], base_env.env_info['robot']['robot_data'], next_joint_pos)
+    next_ee_pos[0] -= 1.51
+    punish_goal += next_ee_pos[0]-next_puck_pos[0]
+
+    #punish if it is out of constraint
+    punish_constraint = 0
+    for _,val in base_env.env_info['constraints'].fun(joint_pos,joint_vel).items():
+        if np.any(val >= 0):
+            punish_constraint += 9000
+    for _,val in base_env.env_info['constraints'].fun(action[0,:], action[1,:]).items():
+        if np.any(val >= 0):
+            punish_constraint += 9000
+    for _,val in base_env.env_info['constraints'].fun(next_joint_pos, next_joint_vel).items():
+        if np.any(val >= 0):
+            punish_constraint += 9000
+    
 
     reward_value = 0
     reward_value -= punish_goal
+    reward_value -= punish_constraint
     # reward_value -= punish_distance
 
-    print('\treward:',reward_value)
+
     return reward_value
 
 if __name__ == '__main__':
@@ -61,8 +78,6 @@ if __name__ == '__main__':
 
                     #numpy array ee_pos
                     ee_pos, _ = forward_kinematics(env_info['robot']['robot_model'],env_info['robot']['robot_data'],joint_pos)
-                    # print('\tq:', joint_pos)
-                    # print('\tee_pos: ',ee_pos)
 
                     change = 0.05
                     if key.char == 'w':
@@ -81,11 +96,9 @@ if __name__ == '__main__':
 
                     
                     new_ee = ee_pos + np.array([delta_x,delta_y,0])
-                    # print('\tnew_ee:', new_ee)
                     success,new_q = inverse_kinematics(env_info['robot']['robot_model'], env_info['robot']['robot_data'], new_ee, initial_q = joint_pos)
 
 
-                    # print('\tnew q:', new_q)
                     action = np.zeros((2,3))
 
                     if success:
@@ -125,12 +138,6 @@ if __name__ == '__main__':
         on_release=on_release)
     
     listener.start()
-
-    
-
-    #TODO: add controls from keyboard
-    # wasd for x,y movement
-
 
 
     env.reset()
