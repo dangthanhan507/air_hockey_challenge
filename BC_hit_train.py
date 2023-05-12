@@ -20,6 +20,8 @@ import torch
 from imitation.algorithms import bc
 from imitation.data.types import Transitions
 
+from imitation.util import logger as imit_logger
+
 from air_hockey_challenge.framework.air_hockey_challenge_wrapper import \
     AirHockeyChallengeWrapper
 from util_networks import AirHockeyACPolicy
@@ -28,7 +30,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-p", "--policy", type=str, default="")
 args = parser.parse_args()
 
-with open("hit_training_data.pkl", "rb") as f:
+with open("training_data.pkl", "rb") as f:
     training_data = pickle.load(f)
     obs = training_data["obs"]
     actions = training_data["actions"].reshape(training_data["actions"].shape[0],-1)
@@ -54,7 +56,9 @@ transitions = Transitions(obs=obs, acts=actions, infos=info, next_obs=next_obs, 
 if len(args.policy) != 0:
     custom_policy = bc.reconstruct_policy(args.policy)
 else:
-    custom_policy = AirHockeyACPolicy(bc_obs_space, bc_action_space) 
+    custom_policy = AirHockeyACPolicy(bc_obs_space, bc_action_space)
+
+#setup imitation tensorboard
 
 rng = np.random.default_rng()
 bc_trainer = bc.BC(
@@ -62,11 +66,16 @@ bc_trainer = bc.BC(
     action_space=bc_action_space,
     demonstrations=transitions,
     rng=rng,
-    batch_size=256,
-    policy=custom_policy
+    batch_size=100_000,
+    policy=custom_policy.cuda(),
+    custom_logger=imit_logger.configure('tensorboard_hit_base/'),
+    device='cuda',
 )
 
-bc_trainer.train(n_epochs=200)
+bc_trainer.train(n_epochs=200,
+                progress_bar=True,
+                reset_tensorboard=True,
+                log_interval=10)
 
 policy_ckpt_dir = Path("./policy_ckpts/")
 if not policy_ckpt_dir.exists():
