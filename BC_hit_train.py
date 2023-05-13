@@ -25,6 +25,8 @@ import torch
 from imitation.algorithms import bc
 from imitation.data.types import Transitions
 
+from imitation.util import logger as imit_logger
+
 from air_hockey_challenge.framework.air_hockey_challenge_wrapper import \
     AirHockeyChallengeWrapper
 from util_networks import AirHockeyACPolicy
@@ -87,14 +89,16 @@ bc_trainer = bc.BC(
     action_space=bc_action_space,
     demonstrations=transitions,
     rng=rng,
-    batch_size=100,
+    batch_size=100_000,
     policy=custom_policy.cuda(),
-    custom_logger=imit_logger.configure('bc_hit_tensorboard/'),
+    custom_logger=imit_logger.configure('tensorboard_hit_base/'),
     device='cuda',
 )
 
-#TRAIN
-bc_trainer.train(n_epochs=1000,log_interval=10)
+bc_trainer.train(n_epochs=200,
+                progress_bar=True,
+                reset_tensorboard=True,
+                log_interval=10)
 
 #SAVE MODEL
 policy_ckpt_dir = Path("./policy_ckpts/")
