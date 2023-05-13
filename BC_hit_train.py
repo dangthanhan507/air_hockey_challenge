@@ -89,13 +89,13 @@ bc_trainer = bc.BC(
     action_space=bc_action_space,
     demonstrations=transitions,
     rng=rng,
-    batch_size=100_000,
+    batch_size=80_000,
     policy=custom_policy.cuda(),
     custom_logger=imit_logger.configure('tensorboard_hit_base/'),
     device='cuda',
 )
 
-bc_trainer.train(n_epochs=200,
+bc_trainer.train(n_epochs=1000,
                 progress_bar=True,
                 reset_tensorboard=True,
                 log_interval=10)
