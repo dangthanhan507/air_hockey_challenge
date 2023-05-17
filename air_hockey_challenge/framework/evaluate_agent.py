@@ -9,6 +9,7 @@ from collections import defaultdict
 import numpy as np
 import torch
 from joblib import Parallel, delayed
+from matplotlib import pyplot as plt
 from mushroom_rl.core import Logger
 from mushroom_rl.utils.dataset import compute_episodes_length
 
@@ -70,7 +71,7 @@ def custom_evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-
 
         # returns: dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations, metric_dict
         data = Parallel(n_jobs=n_cores)(delayed(_evaluate)(path, env, agent_builder, chunks[i], quiet, render,
-                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i,
+                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i, True,
                                                            **kwargs) for i in range(n_cores))
         print(f"DATA: {data}")
 
@@ -195,7 +196,7 @@ def custom_evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-
 
 
 def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed=None, generate_score=None,
-             quiet=True, render=False, **kwargs):
+             quiet=True, render=False, maybe_plot=False, **kwargs):
     """
     Function that will run the evaluation of the agent for a given set of environments. The resulting Dataset and
     constraint stats will be written to folder specified in log_dir. The resulting Dataset can be replayed by the
@@ -243,7 +244,7 @@ def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed
 
         # returns: dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations, metric_dict
         data = Parallel(n_jobs=n_cores)(delayed(_evaluate)(path, env, agent_builder, chunks[i], quiet, render,
-                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i,
+                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i, maybe_plot,
                                                            **kwargs) for i in range(n_cores))
 
         logger = Logger(log_name=env, results_dir=path)
@@ -365,7 +366,7 @@ def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed
 
         os.system("chmod -R 777 {}".format(log_dir))
 
-def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_offset, seed, i, **kwargs):
+def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_offset, seed, i, maybe_plot, **kwargs):
     if seed is not None:
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -377,7 +378,7 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     agent = agent_builder(mdp.env_info, **kwargs)
     core = ChallengeCore(agent, mdp)
 
-    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, eval_params, episode_offset)
+    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, eval_params, episode_offset, maybe_plot)
 
     logger = Logger(log_name=env, results_dir=log_dir, seed=i)
 
@@ -389,7 +390,7 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     return success, penalty_sum, violations, constraints_dict.keys(), n_steps
 
 
-def compute_metrics(core, eval_params, episode_offset):
+def compute_metrics(core, eval_params, episode_offset, maybe_plot=False):
     dataset, dataset_info = core.evaluate(**eval_params, get_env_info=True)
     # print(f"DATASET LEN: {len(dataset)}")
     
@@ -406,6 +407,47 @@ def compute_metrics(core, eval_params, episode_offset):
 
     # Iterate over episodes
     for episode_len in episode_length:
+        # For plotting
+        if maybe_plot:
+            episode_data = dataset[current_eps:current_eps + episode_len]
+            x, y, z = [], [], []
+            x_vel, y_vel, z_vel = [], [], []
+            for data in episode_data:
+                state = data[0]
+                action = data[1]
+                x.append(action[0,0])
+                y.append(action[0,1])
+                z.append(action[0,2])
+
+                x_vel.append(action[1,0])
+                y_vel.append(action[1,1])
+                z_vel.append(action[1,2])
+
+            with open(f"evaluate_plots/episode_{current_idx}.txt", "a") as f:
+                for i in range(episode_len):
+                    # f.write(x[i] + " " + y[i] + " " + z[i] + " " + x_vel[i] + " " + y_vel[i] + " " + z_vel[i])
+                    f.write(f"{x[i]} {y[i]} {z[i]} {x_vel[i]} {y_vel[i]} + {z_vel[i]}\n")
+             
+            plt.subplot(231)
+            plt.title("X")
+            plt.plot(np.arange(episode_len), np.array(x))
+            plt.subplot(232)
+            plt.title("Y")
+            plt.plot(np.arange(episode_len), np.array(y))
+            plt.subplot(233)
+            plt.title("Z")
+            plt.plot(np.arange(episode_len), np.array(z))
+            plt.subplot(234)
+            plt.title("X vel")
+            plt.plot(np.arange(episode_len), np.array(x_vel))
+            plt.subplot(235)
+            plt.title("Y vel")
+            plt.plot(np.arange(episode_len), np.array(y_vel))
+            plt.subplot(236)
+            plt.title("Z vel")
+            plt.plot(np.arange(episode_len), np.array(z_vel))
+            plt.savefig(f"evaluate_plots/episode_{current_idx}.jpg")
+
         # Only check last step of episode for success
         episode_result = dataset_info["success"][current_idx + episode_len - 1]
         success += episode_result        
