@@ -8,11 +8,13 @@ from collections import defaultdict
 
 import numpy as np
 import torch
+from imitation.algorithms.bc import reconstruct_policy
 from joblib import Parallel, delayed
 from matplotlib import pyplot as plt
 from mushroom_rl.core import Logger
 from mushroom_rl.utils.dataset import compute_episodes_length
 
+from air_hockey_challenge.framework import AgentBase
 from air_hockey_challenge.framework.air_hockey_challenge_wrapper import \
     AirHockeyChallengeWrapper
 from air_hockey_challenge.framework.challenge_core import ChallengeCore
@@ -366,6 +368,48 @@ def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed
 
         os.system("chmod -R 777 {}".format(log_dir))
 
+class BehaviorCloneAgent(AgentBase):
+    def __init__(self, env_info, model, device, **kwargs):
+        super().__init__(env_info, **kwargs)
+        self.new_start = True
+        self.hold_position = None
+        
+        self.model = model
+        self.device = device
+
+    def reset(self):
+        self.new_start = True
+        self.hold_position = None
+
+    def draw_action(self, observation):
+        if self.new_start:
+            self.new_start = False
+            self.hold_position = self.get_joint_pos(observation)
+
+            velocity = np.zeros_like(self.hold_position)
+            action = np.vstack([self.hold_position, velocity])
+        else:
+            obs_tensor = torch.tensor(observation,dtype=torch.float).reshape(1,12).detach()
+            action,_,_ = self.model(obs_tensor)
+            action = action.reshape(2,3).detach().numpy()
+            
+        
+        return action
+
+def build_bc_agent(env_info, **kwargs):
+    """
+    Function where an Agent that controls the environments should be returned.
+    The Agent should inherit from the mushroom_rl Agent base env.
+
+    Args:
+        env_info (dict): The environment information
+        kwargs (any): Additionally setting from agent_config.yml
+    Returns:
+         (AgentBase) An instance of the Agent
+    """
+
+    return BehaviorCloneAgent(env_info, **kwargs)
+
 def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_offset, seed, i, maybe_plot, **kwargs):
     if seed is not None:
         np.random.seed(seed)
@@ -376,9 +420,12 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     mdp = AirHockeyChallengeWrapper(env)
 
     agent = agent_builder(mdp.env_info, **kwargs)
+    bc_defense_policy = reconstruct_policy("./defense_bc_policy2_1024")
+    device = torch.device("cpu")
+    bc_agent = build_bc_agent(mdp.env_info, model=bc_defense_policy, device=device, **kwargs)
     core = ChallengeCore(agent, mdp)
 
-    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, eval_params, episode_offset, maybe_plot)
+    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, bc_agent, eval_params, episode_offset, maybe_plot)
 
     logger = Logger(log_name=env, results_dir=log_dir, seed=i)
 
@@ -390,7 +437,7 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     return success, penalty_sum, violations, constraints_dict.keys(), n_steps
 
 
-def compute_metrics(core, eval_params, episode_offset, maybe_plot=False):
+def compute_metrics(core, bc_agent, eval_params, episode_offset, maybe_plot=False):
     dataset, dataset_info = core.evaluate(**eval_params, get_env_info=True)
     # print(f"DATASET LEN: {len(dataset)}")
     
@@ -412,8 +459,12 @@ def compute_metrics(core, eval_params, episode_offset, maybe_plot=False):
             episode_data = dataset[current_eps:current_eps + episode_len]
             x, y, z = [], [], []
             x_vel, y_vel, z_vel = [], [], []
+
+            bc_x, bc_y, bc_z = [], [], []
+            bc_x_vel, bc_y_vel, bc_z_vel = [], [], []
+
+            bc_agent.reset()
             for data in episode_data:
-                state = data[0]
                 action = data[1]
                 x.append(action[0,0])
                 y.append(action[0,1])
@@ -423,30 +474,57 @@ def compute_metrics(core, eval_params, episode_offset, maybe_plot=False):
                 y_vel.append(action[1,1])
                 z_vel.append(action[1,2])
 
-            with open(f"evaluate_plots/episode_{current_idx}.txt", "a") as f:
-                for i in range(episode_len):
-                    # f.write(x[i] + " " + y[i] + " " + z[i] + " " + x_vel[i] + " " + y_vel[i] + " " + z_vel[i])
-                    f.write(f"{x[i]} {y[i]} {z[i]} {x_vel[i]} {y_vel[i]} + {z_vel[i]}\n")
-             
-            plt.subplot(231)
-            plt.title("X")
-            plt.plot(np.arange(episode_len), np.array(x))
-            plt.subplot(232)
-            plt.title("Y")
-            plt.plot(np.arange(episode_len), np.array(y))
-            plt.subplot(233)
-            plt.title("Z")
-            plt.plot(np.arange(episode_len), np.array(z))
-            plt.subplot(234)
-            plt.title("X vel")
-            plt.plot(np.arange(episode_len), np.array(x_vel))
-            plt.subplot(235)
-            plt.title("Y vel")
-            plt.plot(np.arange(episode_len), np.array(y_vel))
-            plt.subplot(236)
-            plt.title("Z vel")
-            plt.plot(np.arange(episode_len), np.array(z_vel))
-            plt.savefig(f"evaluate_plots/episode_{current_idx}.jpg")
+                obs = data[0]
+                action = bc_agent.draw_action(obs)
+                bc_x.append(action[0,0])
+                bc_y.append(action[0,1])
+                bc_z.append(action[0,2])
+                bc_x_vel.append(action[1,0])
+                bc_y_vel.append(action[1,1])
+                bc_z_vel.append(action[1,2])
+
+            check_movement_conditions = [
+                    np.var(np.array(x)) < 1e-5,
+                    np.var(np.array(y)) < 1e-5,
+                    np.var(np.array(z)) < 1e-5,
+                    np.var(np.array(x_vel)) < 1e-5,
+                    np.var(np.array(y_vel)) < 1e-5,
+                    np.var(np.array(z_vel)) < 1e-5
+                ]
+
+            if False:
+                print("BAD DATA!!!")
+            else:
+                with open(f"evaluate_plots/episode_{current_idx}.txt", "a") as f:
+                    for i in range(episode_len):
+                        # f.write(x[i] + " " + y[i] + " " + z[i] + " " + x_vel[i] + " " + y_vel[i] + " " + z_vel[i])
+                        f.write(f"{x[i]} {y[i]} {z[i]} {x_vel[i]} {y_vel[i]} + {z_vel[i]}\n")
+                 
+                plt.subplot(231)
+                plt.title("X")
+                plt.plot(np.arange(episode_len), np.array(x))
+                plt.plot(np.arange(episode_len), np.array(bc_x))
+                plt.subplot(232)
+                plt.title("Y")
+                plt.plot(np.arange(episode_len), np.array(y))
+                plt.plot(np.arange(episode_len), np.array(bc_y))
+                plt.subplot(233)
+                plt.title("Z")
+                plt.plot(np.arange(episode_len), np.array(z))
+                plt.plot(np.arange(episode_len), np.array(bc_z))
+                plt.subplot(234)
+                plt.title("X vel")
+                plt.plot(np.arange(episode_len), np.array(x_vel))
+                plt.plot(np.arange(episode_len), np.array(bc_x_vel))
+                plt.subplot(235)
+                plt.title("Y vel")
+                plt.plot(np.arange(episode_len), np.array(y_vel))
+                plt.plot(np.arange(episode_len), np.array(bc_y_vel))
+                plt.subplot(236)
+                plt.title("Z vel")
+                plt.plot(np.arange(episode_len), np.array(z_vel))
+                plt.plot(np.arange(episode_len), np.array(bc_z_vel))
+                plt.savefig(f"evaluate_plots/episode_{current_idx}.jpg")
 
         # Only check last step of episode for success
         episode_result = dataset_info["success"][current_idx + episode_len - 1]
