@@ -23,13 +23,18 @@ class AirHockeyNN(nn.Module):
         feature_dim: int = 12,
         last_layer_dim_pi: int = 32,
         last_layer_dim_vf: int = 32,
+        exclude_robot_obs=False
     ):
         super().__init__()
-
+        
+        self.exclude_robot_obs = exclude_robot_obs
         # IMPORTANT:
         # Save output dimensions, used to create the distributions
         self.latent_dim_pi = last_layer_dim_pi
         self.latent_dim_vf = last_layer_dim_vf
+
+        if self.exclude_robot_obs:
+            feature_dim = 6
 
         # Policy network
         self.policy_net = nn.Sequential(
@@ -54,7 +59,10 @@ class AirHockeyNN(nn.Module):
         :return: (th.Tensor, th.Tensor) latent_policy, latent_value of the specified network.
             If all layers are shared, then ``latent_policy == latent_value``
         """
-        return self.forward_actor(features), self.forward_critic(features)
+        if self.exclude_robot_obs:
+            return self.forward_actor(features[:,:6]), self.forward_critic(features[:,:6])
+        else:
+            return self.forward_actor(features), self.forward_critic(features)
 
     def forward_actor(self, features: th.Tensor) -> th.Tensor:
         return self.policy_net(features)
@@ -69,10 +77,12 @@ class AirHockeyACPolicy(ActorCriticPolicy):
         observation_space: spaces.Space,
         action_space: spaces.Space,
         lr_schedule: Callable[[float], float] = lambda _: th.finfo(th.float32).max,
+        exclude_robot_obs=False,
         *args,
         **kwargs,
     ):
-
+        self.exclude_robot_obs = exclude_robot_obs
+        
         super().__init__(
             observation_space,
             action_space,
@@ -85,4 +95,4 @@ class AirHockeyACPolicy(ActorCriticPolicy):
         self.ortho_init = False
 
     def _build_mlp_extractor(self) -> None:
-        self.mlp_extractor = AirHockeyNN(self.features_dim)
+        self.mlp_extractor = AirHockeyNN(self.features_dim, exclude_robot_obs=self.exclude_robot_obs)

@@ -79,7 +79,7 @@ transitions = Transitions(obs=obs, acts=actions, infos=info, next_obs=next_obs, 
 if len(args.policy) != 0:
     custom_policy = bc.reconstruct_policy(args.policy)
 else:
-    custom_policy = AirHockeyACPolicy(bc_obs_space, bc_action_space)
+    custom_policy = AirHockeyACPolicy(bc_obs_space, bc_action_space, exclude_robot_obs=args.exclude_robot_obs)
 
 
 #SETUP IMITATION LEARNING
@@ -89,7 +89,7 @@ bc_trainer = bc.BC(
     action_space=bc_action_space,
     demonstrations=transitions,
     rng=rng,
-    batch_size=80_000,
+    batch_size=100,
     policy=custom_policy.cuda(),
     custom_logger=imit_logger.configure('tensorboard_hit_base/'),
     device='cuda',
