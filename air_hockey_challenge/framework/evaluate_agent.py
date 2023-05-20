@@ -23,7 +23,7 @@ PENALTY_POINTS = {"joint_pos_constr": 2, "ee_constr": 3, "joint_vel_constr": 1, 
                   "computation_time_middle": 1,  "computation_time_major": 2}
 
 def custom_evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed=None, generate_score=None,
-             quiet=True, render=False, **kwargs):
+             quiet=True, render=False, maybe_plot=True, maybe_generate_trajs, **kwargs):
     """
     WILL ALSO RETURN A TRANSITIONS OBJECT
 
@@ -73,7 +73,7 @@ def custom_evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-
 
         # returns: dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations, metric_dict
         data = Parallel(n_jobs=n_cores)(delayed(_evaluate)(path, env, agent_builder, chunks[i], quiet, render,
-                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i, True,
+                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i, maybe_plot, maybe_generate_trajs,
                                                            **kwargs) for i in range(n_cores))
         print(f"DATA: {data}")
 
@@ -198,7 +198,7 @@ def custom_evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-
 
 
 def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed=None, generate_score=None,
-             quiet=True, render=False, maybe_plot=False, **kwargs):
+             quiet=True, render=False, maybe_plot=False, maybe_generate_trajs=False, **kwargs):
     """
     Function that will run the evaluation of the agent for a given set of environments. The resulting Dataset and
     constraint stats will be written to folder specified in log_dir. The resulting Dataset can be replayed by the
@@ -246,7 +246,7 @@ def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed
 
         # returns: dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations, metric_dict
         data = Parallel(n_jobs=n_cores)(delayed(_evaluate)(path, env, agent_builder, chunks[i], quiet, render,
-                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i, maybe_plot,
+                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i, maybe_plot, maybe_generate_trajs,
                                                            **kwargs) for i in range(n_cores))
 
         logger = Logger(log_name=env, results_dir=path)
@@ -410,7 +410,7 @@ def build_bc_agent(env_info, **kwargs):
 
     return BehaviorCloneAgent(env_info, **kwargs)
 
-def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_offset, seed, i, maybe_plot, **kwargs):
+def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_offset, seed, i, maybe_plot, maybe_generate_trajs, **kwargs):
     if seed is not None:
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -425,7 +425,7 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     bc_agent = build_bc_agent(mdp.env_info, model=bc_defense_policy, device=device, **kwargs)
     core = ChallengeCore(agent, mdp)
 
-    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, bc_agent, eval_params, episode_offset, maybe_plot)
+    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, bc_agent, eval_params, episode_offset, maybe_plot, maybe_generate_trajs)
 
     logger = Logger(log_name=env, results_dir=log_dir, seed=i)
 
@@ -437,7 +437,7 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     return success, penalty_sum, violations, constraints_dict.keys(), n_steps
 
 
-def compute_metrics(core, bc_agent, eval_params, episode_offset, maybe_plot=False):
+def compute_metrics(core, bc_agent, eval_params, episode_offset, maybe_plot=False, maybe_generate_trajs=False):
     dataset, dataset_info = core.evaluate(**eval_params, get_env_info=True)
     # print(f"DATASET LEN: {len(dataset)}")
     
@@ -560,17 +560,18 @@ def compute_metrics(core, bc_agent, eval_params, episode_offset, maybe_plot=Fals
         current_idx += episode_len
         current_eps += 1
 
-    states, actions, next_states, step_infos, dones = [], [], [], [], []
-    for data in dataset:
-        (state, action, _, next_state, _, last) = data 
-        states.append(state)
-        actions.append(action)
-        next_states.append(next_state)
-        dones.append(last)
-    for i in range(len(states)):
-        step_infos.append(dataset_info)
+    if maybe_generate_trajs:
+        states, actions, next_states, step_infos, dones = [], [], [], [], []
+        for data in dataset:
+            (state, action, _, next_state, _, last) = data 
+            states.append(state)
+            actions.append(action)
+            next_states.append(next_state)
+            dones.append(last)
+        for i in range(len(states)):
+            step_infos.append(dataset_info)
+        log_training_data(states, actions, next_states, dones, step_infos)
 
-    log_training_data(states, actions, next_states, dones, step_infos)
     success = success / n_episodes
 
     return dataset, success, penalty_sum, constraints_dict, dataset_info["jerk"], dataset_info["computation_time"], violations
