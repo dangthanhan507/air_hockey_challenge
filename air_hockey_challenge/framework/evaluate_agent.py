@@ -23,7 +23,7 @@ PENALTY_POINTS = {"joint_pos_constr": 2, "ee_constr": 3, "joint_vel_constr": 1, 
                   "computation_time_middle": 1,  "computation_time_major": 2}
 
 def custom_evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed=None, generate_score=None,
-             quiet=True, render=False, maybe_plot=True, maybe_generate_trajs, **kwargs):
+             quiet=True, render=False, maybe_plot=True, maybe_generate_trajs=False, **kwargs):
     """
     WILL ALSO RETURN A TRANSITIONS OBJECT
 
@@ -525,6 +525,7 @@ def compute_metrics(core, bc_agent, eval_params, episode_offset, maybe_plot=Fals
                 plt.plot(np.arange(episode_len), np.array(z_vel))
                 plt.plot(np.arange(episode_len), np.array(bc_z_vel))
                 plt.savefig(f"evaluate_plots/episode_{current_idx}.jpg")
+                plt.clf()
 
         # Only check last step of episode for success
         episode_result = dataset_info["success"][current_idx + episode_len - 1]
