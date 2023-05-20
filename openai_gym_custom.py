@@ -1,3 +1,4 @@
+import numpy as np
 import gym
 from gym import spaces
 from baseline.baseline_agent.baseline_agent import BaselineAgent
