@@ -1,29 +1,9 @@
-from air_hockey_challenge.framework.air_hockey_challenge_wrapper import \
-    AirHockeyChallengeWrapper
-from baseline.baseline_agent.baseline_agent import BaselineAgent
-
 import gym
 from gym import spaces
-
-from pathlib import Path
-
-from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
-
-import numpy as np
-import torch
-
-from imitation.algorithms import bc
-from imitation.algorithms.dagger import SimpleDAggerTrainer
-
-from util_networks import AirHockeyACPolicy
-
+from baseline.baseline_agent.baseline_agent import BaselineAgent
+from air_hockey_challenge.framework.air_hockey_challenge_wrapper import AirHockeyChallengeWrapper
 from imitation.policies.base import HardCodedPolicy
-import tempfile
-'''
-    CustomEnv:
-        -> wraps our MushroomRL robot environment around OpenAI Gym Environment
-        -> 
-'''
+
 class CustomEnv(gym.Env):
   """Custom Environment that follows gym interface"""
   metadata = {'render.modes': ['human']}
@@ -174,44 +154,3 @@ def make_env():
         env = CustomEnv('3dof-hit')
         return env
     return _f
-
-if __name__ == '__main__':
-    env = CustomEnv('3dof-hit')
-
-    venv = DummyVecEnv([lambda: CustomEnv('3dof-hit')])
-    # venv = SubprocVecEnv([make_env() for i in range(3)])
-    venv.reset()
-
-    rng = np.random.default_rng(0)
-
-    custom_policy = AirHockeyACPolicy(env.observation_space, env.action_space, exclude_robot_obs=True)
-
-    bc_trainer = bc.BC(
-        observation_space=venv.observation_space,
-        action_space=venv.action_space,
-        rng=rng,
-        policy=custom_policy.cuda(),
-        device='cuda',
-        batch_size=32
-    )
-
-    expert = BaselineAgentPolicy(env.mdp.env_info, env.observation_space, env.action_space)
-
-
-    with tempfile.TemporaryDirectory(prefix="dagger_example_") as tmpdir:
-        dagger_trainer = SimpleDAggerTrainer(
-            venv=venv,
-            scratch_dir=tmpdir,
-            expert_policy=expert,
-            bc_trainer=bc_trainer,
-            rng=rng,
-        )
-        dagger_trainer.train(80_000)
-
-
-        #SAVE MODEL
-        policy_ckpt_dir = Path("./dagger_policy_ckpts/")
-        if not policy_ckpt_dir.exists():
-            policy_ckpt_dir.mkdir(parents=True, exist_ok=False)
-        n_files = len([_ for _ in policy_ckpt_dir.iterdir()])
-        dagger_trainer.save_policy(f"dagger_policy_ckpts/hit_bc_policy_{n_files + 1}.pt")

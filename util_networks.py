@@ -65,10 +65,17 @@ class AirHockeyNN(nn.Module):
             return self.forward_actor(features), self.forward_critic(features)
 
     def forward_actor(self, features: th.Tensor) -> th.Tensor:
-        return self.policy_net(features)
+        if self.exclude_robot_obs:
+            return self.policy_net(features[:,:6])
+        else:
+            return self.policy_net(features)
 
     def forward_critic(self, features: th.Tensor) -> th.Tensor:
-        return self.value_net(features)
+        if self.exclude_robot_obs:
+            return self.value_net(features[:,:6])
+        else:
+            return self.value_net(features)
+        
 
 
 class AirHockeyACPolicy(ActorCriticPolicy):

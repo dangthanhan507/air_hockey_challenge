@@ -93,6 +93,10 @@ bc_trainer = bc.BC(
     policy=custom_policy.cuda(),
     custom_logger=imit_logger.configure('tensorboard_hit_base/'),
     device='cuda',
+    l2_weight=10,
+    ent_weight=10,
+    optimizer_cls=torch.optim.Adam,
+    optimizer_kwargs={'lr': 1e-5, 'amsgrad': False}
 )
 
 bc_trainer.train(n_epochs=1000,
