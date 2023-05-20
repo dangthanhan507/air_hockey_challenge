@@ -76,6 +76,89 @@ class AirHockeyNN(nn.Module):
         else:
             return self.value_net(features)
         
+class AirHockeyNN2(nn.Module):
+    """
+    Custom network for policy and value function.
+    It receives as input the features extracted by the features extractor.
+
+    :param feature_dim: dimension of the features extracted with the features_extractor (e.g. features from a CNN)
+    :param last_layer_dim_pi: (int) number of units for the last layer of the policy network
+    :param last_layer_dim_vf: (int) number of units for the last layer of the value network
+    """
+
+    def __init__(
+        self,
+        feature_dim: int = 12,
+        last_layer_dim_pi: int = 32,
+        last_layer_dim_vf: int = 32,
+        exclude_robot_obs=False
+    ):
+        super().__init__()
+        
+        self.exclude_robot_obs = exclude_robot_obs
+        # IMPORTANT:
+        # Save output dimensions, used to create the distributions
+        self.latent_dim_pi = last_layer_dim_pi
+        self.latent_dim_vf = last_layer_dim_vf
+
+        if self.exclude_robot_obs:
+            feature_dim = 6
+
+        # Policy network
+        self.policy_net = nn.Sequential(
+            nn.Linear(feature_dim, 32), nn.ReLU(),
+            nn.Linear(32, 64), nn.ReLU(),
+            nn.Linear(64, 128), nn.ReLU(),
+            nn.Linear(128, 256), nn.ReLU(),
+            nn.Linear(256, 512), nn.ReLU(),
+            nn.Linear(512, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 512), nn.ReLU(),
+            nn.Linear(512, 256), nn.ReLU(),
+            nn.Linear(256, 128), nn.ReLU(),
+            nn.Linear(128, 64), nn.ReLU(),
+            nn.Linear(64, last_layer_dim_pi), nn.ReLU()
+        )
+        # Value network
+        self.value_net = nn.Sequential(
+            nn.Linear(feature_dim, 32), nn.ReLU(),
+            nn.Linear(32, 64), nn.ReLU(),
+            nn.Linear(64, 128), nn.ReLU(),
+            nn.Linear(128, 256), nn.ReLU(),
+            nn.Linear(256, 512), nn.ReLU(),
+            nn.Linear(512, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 512), nn.ReLU(),
+            nn.Linear(512, 256), nn.ReLU(),
+            nn.Linear(256, 128), nn.ReLU(),
+            nn.Linear(128, 64), nn.ReLU(),
+            nn.Linear(64, last_layer_dim_vf), nn.ReLU()        )
+
+    def forward(self, features: th.Tensor) -> Tuple[th.Tensor, th.Tensor]:
+        """
+        :return: (th.Tensor, th.Tensor) latent_policy, latent_value of the specified network.
+            If all layers are shared, then ``latent_policy == latent_value``
+        """
+        if self.exclude_robot_obs:
+            return self.forward_actor(features[:,:6]), self.forward_critic(features[:,:6])
+        else:
+            return self.forward_actor(features), self.forward_critic(features)
+
+    def forward_actor(self, features: th.Tensor) -> th.Tensor:
+        if self.exclude_robot_obs:
+            return self.policy_net(features[:,:6])
+        else:
+            return self.policy_net(features)
+
+    def forward_critic(self, features: th.Tensor) -> th.Tensor:
+        if self.exclude_robot_obs:
+            return self.value_net(features[:,:6])
+        else:
+            return self.value_net(features)
 
 
 class AirHockeyACPolicy(ActorCriticPolicy):
@@ -85,11 +168,12 @@ class AirHockeyACPolicy(ActorCriticPolicy):
         action_space: spaces.Space,
         lr_schedule: Callable[[float], float] = lambda _: th.finfo(th.float32).max,
         exclude_robot_obs=False,
+        bigger_network=False,
         *args,
         **kwargs,
     ):
         self.exclude_robot_obs = exclude_robot_obs
-        
+        self.bigger_network = bigger_network
         super().__init__(
             observation_space,
             action_space,
@@ -102,4 +186,7 @@ class AirHockeyACPolicy(ActorCriticPolicy):
         self.ortho_init = False
 
     def _build_mlp_extractor(self) -> None:
-        self.mlp_extractor = AirHockeyNN(self.features_dim, exclude_robot_obs=self.exclude_robot_obs)
+        if self.bigger_network:
+            self.mlp_extractor = AirHockeyNN2(self.features_dim, exclude_robot_obs=self.exclude_robot_obs)    
+        else:
+            self.mlp_extractor = AirHockeyNN(self.features_dim, exclude_robot_obs=self.exclude_robot_obs)

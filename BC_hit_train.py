@@ -79,7 +79,7 @@ transitions = Transitions(obs=obs, acts=actions, infos=info, next_obs=next_obs, 
 if len(args.policy) != 0:
     custom_policy = bc.reconstruct_policy(args.policy)
 else:
-    custom_policy = AirHockeyACPolicy(bc_obs_space, bc_action_space, exclude_robot_obs=args.exclude_robot_obs)
+    custom_policy = AirHockeyACPolicy(bc_obs_space, bc_action_space, exclude_robot_obs=args.exclude_robot_obs,bigger_network=True)
 
 
 #SETUP IMITATION LEARNING
@@ -89,15 +89,18 @@ bc_trainer = bc.BC(
     action_space=bc_action_space,
     demonstrations=transitions,
     rng=rng,
-    batch_size=80_000,
+    batch_size=60_000,
     policy=custom_policy.cuda(),
-    custom_logger=imit_logger.configure('tensorboard_hit_base/'),
+    custom_logger=imit_logger.configure('tensorboard_hit_base2/'),
     device='cuda',
-    l2_weight=10,
-    ent_weight=10,
+    l2_weight=0.01,
+    ent_weight=0.001,
     optimizer_cls=torch.optim.Adam,
-    optimizer_kwargs={'lr': 1e-5, 'amsgrad': False}
+    optimizer_kwargs={'lr': 1e-3, 'amsgrad': False}
 )
+#loss = neglogp + ent_loss + l2_loss
+#neglogp is natural loss which is normally within single digits
+#scale ur losses properly for training
 
 bc_trainer.train(n_epochs=1000,
                 progress_bar=True,
