@@ -3,25 +3,32 @@ import gc
 import itertools
 import json
 import os
+import pickle
 from collections import defaultdict
 
 import numpy as np
 import torch
+from imitation.algorithms.bc import reconstruct_policy
 from joblib import Parallel, delayed
+from matplotlib import pyplot as plt
 from mushroom_rl.core import Logger
 from mushroom_rl.utils.dataset import compute_episodes_length
 
+from air_hockey_challenge.framework import AgentBase
 from air_hockey_challenge.framework.air_hockey_challenge_wrapper import \
     AirHockeyChallengeWrapper
 from air_hockey_challenge.framework.challenge_core import ChallengeCore
+from baseline.baseline_agent.baseline_agent import \
+    build_agent as build_baseline_agent
 
 PENALTY_POINTS = {"joint_pos_constr": 2, "ee_constr": 3, "joint_vel_constr": 1, "jerk": 1, "computation_time_minor": 0.5,
                   "computation_time_middle": 1,  "computation_time_major": 2}
 
-
-def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed=None, generate_score=None,
-             quiet=True, render=False, **kwargs):
+def custom_evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed=None, generate_score=None,
+             quiet=True, render=False, n_plot=0, maybe_generate_trajs=False, **kwargs):
     """
+    WILL ALSO RETURN A TRANSITIONS OBJECT
+
     Function that will run the evaluation of the agent for a given set of environments. The resulting Dataset and
     constraint stats will be written to folder specified in log_dir. The resulting Dataset can be replayed by the
     replay_dataset function in air_hockey_challenge/utils/replay_dataset.py. This function is intended to be called
@@ -43,7 +50,7 @@ def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed
         render (bool, False): set to True to spawn a viewer that renders the simulation
         kwargs (any): Argument passed to the Agent init
     """
-
+    print("=== CUSTOM EVALUATE ===")
     path = os.path.join(log_dir, datetime.datetime.now().strftime('eval-%Y-%m-%d_%H-%M-%S'))
 
     if n_cores == -1:
@@ -68,8 +75,9 @@ def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed
 
         # returns: dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations, metric_dict
         data = Parallel(n_jobs=n_cores)(delayed(_evaluate)(path, env, agent_builder, chunks[i], quiet, render,
-                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i,
+                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i, n_plot, maybe_generate_trajs,
                                                            **kwargs) for i in range(n_cores))
+        print(f"DATA: {data}")
 
         logger = Logger(log_name=env, results_dir=path)
 
@@ -190,7 +198,8 @@ def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed
 
         os.system("chmod -R 777 {}".format(log_dir))
 
-def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_offset, seed, i, **kwargs):
+
+def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_offset, seed, i, n_plot, maybe_generate_trajs, **kwargs):
     if seed is not None:
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -200,9 +209,10 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     mdp = AirHockeyChallengeWrapper(env)
 
     agent = agent_builder(mdp.env_info, **kwargs)
+    baseline_agent = build_baseline_agent(mdp.env_info, **kwargs)
     core = ChallengeCore(agent, mdp)
 
-    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, eval_params, episode_offset)
+    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, baseline_agent, eval_params, episode_offset, n_plot, maybe_generate_trajs)
 
     logger = Logger(log_name=env, results_dir=log_dir, seed=i)
 
@@ -214,9 +224,10 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     return success, penalty_sum, violations, constraints_dict.keys(), n_steps
 
 
-def compute_metrics(core, eval_params, episode_offset):
+def compute_metrics(core, baseline_agent, eval_params, episode_offset, n_plot=0, maybe_generate_trajs=False):
     dataset, dataset_info = core.evaluate(**eval_params, get_env_info=True)
-
+    # print(f"DATASET LEN: {len(dataset)}")
+    
     episode_length = compute_episodes_length(dataset)
     n_episodes = len(episode_length)
 
@@ -230,8 +241,72 @@ def compute_metrics(core, eval_params, episode_offset):
 
     # Iterate over episodes
     for episode_len in episode_length:
+        # For plotting
+        if n_plot >= 1:
+            episode_data = dataset[current_eps:current_eps + episode_len]
+            x, y, z = [], [], []
+            x_vel, y_vel, z_vel = [], [], []
+            b_x, b_y, b_z = [], [], []
+            b_x_vel, b_y_vel, b_z_vel = [], [], []
+
+            for i, data in enumerate(episode_data):
+                action = data[1]
+                x.append(action[0,0])
+                y.append(action[0,1])
+                z.append(action[0,2])
+
+                x_vel.append(action[1,0])
+                y_vel.append(action[1,1])
+                z_vel.append(action[1,2])
+
+                if n_plot == 2:
+                    print("Iteration", i)
+                    baseline_agent.reset()
+                    obs = data[0]
+                    action = baseline_agent.draw_action(obs)
+                    b_x.append(action[0,0])
+                    b_y.append(action[0,1])
+                    b_z.append(action[0,2])
+                    b_x_vel.append(action[1,0])
+                    b_y_vel.append(action[1,1])
+                    b_z_vel.append(action[1,2])
+
+            plt.subplot(231)
+            plt.title("X")
+            plt.plot(np.arange(episode_len), np.array(x))
+            if n_plot == 2:
+                plt.plot(np.arange(episode_len), np.array(b_x))
+            plt.subplot(232)
+            plt.title("Y")
+            plt.plot(np.arange(episode_len), np.array(y))
+            if n_plot == 2:
+                plt.plot(np.arange(episode_len), np.array(b_y))
+            plt.subplot(233)
+            plt.title("Z")
+            plt.plot(np.arange(episode_len), np.array(z))
+            if n_plot == 2:
+                plt.plot(np.arange(episode_len), np.array(b_z))
+            plt.subplot(234)
+            plt.title("X vel")
+            plt.plot(np.arange(episode_len), np.array(x_vel))
+            if n_plot == 2:
+                plt.plot(np.arange(episode_len), np.array(b_x_vel))
+            plt.subplot(235)
+            plt.title("Y vel")
+            plt.plot(np.arange(episode_len), np.array(y_vel))
+            if n_plot == 2:
+                plt.plot(np.arange(episode_len), np.array(b_y_vel))
+            plt.subplot(236)
+            plt.title("Z vel")
+            plt.plot(np.arange(episode_len), np.array(z_vel))
+            if n_plot == 2:
+                plt.plot(np.arange(episode_len), np.array(b_z_vel))
+            plt.savefig(f"evaluate_plots/episode_{current_idx}.jpg")
+            plt.clf()
+
         # Only check last step of episode for success
-        success += dataset_info["success"][current_idx + episode_len - 1]
+        episode_result = dataset_info["success"][current_idx + episode_len - 1]
+        success += episode_result        
 
         for name in constraints_dict.keys():
             if np.any(np.array(constraints_dict[name][current_idx: current_idx + episode_len]) > 0):
@@ -263,10 +338,32 @@ def compute_metrics(core, eval_params, episode_offset):
         current_idx += episode_len
         current_eps += 1
 
+    if maybe_generate_trajs:
+        states, actions, next_states, step_infos, dones = [], [], [], [], []
+        for data in dataset:
+            (state, action, _, next_state, _, last) = data 
+            states.append(state)
+            actions.append(action)
+            next_states.append(next_state)
+            dones.append(last)
+        for i in range(len(states)):
+            step_infos.append(dataset_info)
+        log_training_data(states, actions, next_states, dones, step_infos)
+
     success = success / n_episodes
 
     return dataset, success, penalty_sum, constraints_dict, dataset_info["jerk"], dataset_info["computation_time"], violations
 
+def log_training_data(obs, actions, next_actions, dones, info):
+    with open("training_data.pkl", "wb") as f:
+        data = {
+                "obs": np.stack(obs),
+                "actions": np.stack(actions),
+                "next_obs": np.stack(next_actions),
+                "dones": np.stack(dones),
+                "info": np.stack(info)
+        }
+        pickle.dump(data, f)
 
 def compute_seed(seed, i):
     if seed is not None:

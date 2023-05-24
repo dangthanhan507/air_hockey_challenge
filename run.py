@@ -33,13 +33,14 @@ Examples:
 """
 
 
-from air_hockey_challenge.framework.evaluate_agent import evaluate
-
+import os
 from argparse import ArgumentParser
 from pathlib import Path
 
 import yaml
-import os
+
+from air_hockey_challenge.framework.evaluate_agent import evaluate
+
 
 def convert_envs(env_list):
     if "all" in env_list:
@@ -123,4 +124,3 @@ if __name__ == "__main__":
     del config["env"]
 
     evaluate(build_agent, **config)
-

@@ -1,12 +1,16 @@
-from util_networks import AirHockeyACPolicy
-import torch
 import numpy as np
+import torch
+from imitation.algorithms.bc import reconstruct_policy
 
 from air_hockey_challenge.framework import AgentBase
-from air_hockey_challenge.framework.challenge_core import ChallengeCore, CustomChallengeCore
-from air_hockey_challenge.framework.air_hockey_challenge_wrapper import AirHockeyChallengeWrapper
-from air_hockey_challenge.framework.evaluate_agent import evaluate
-from imitation.algorithms.bc import reconstruct_policy
+from air_hockey_challenge.framework.air_hockey_challenge_wrapper import \
+    AirHockeyChallengeWrapper
+from air_hockey_challenge.framework.challenge_core import (ChallengeCore,
+                                                           CustomChallengeCore)
+from air_hockey_challenge.framework.custom_evaluate_agent import \
+    custom_evaluate
+from util_networks import AirHockeyACPolicy
+
 
 class BehaviorCloneAgent(AgentBase):
     def __init__(self, env_info, model, device, **kwargs):
@@ -49,7 +53,7 @@ def build_agent(env_info, **kwargs):
 
     return BehaviorCloneAgent(env_info, **kwargs)
 
-model = reconstruct_policy("defense_bc_policy_1.pt").cpu()
+model = reconstruct_policy("dagger_policy_ckpts/hit_bc_policy_3.pt").cpu()
 
 
-evaluate(build_agent, 'some_folder/', ['3dof-hit'], 100, 1, model=model, device='cpu', render=True)
+custom_evaluate(build_agent, 'some_folder/', ['3dof-hit'], 1, 1, model=model, device='cpu', render=True, n_plot=2, maybe_generate_trajs=False)
