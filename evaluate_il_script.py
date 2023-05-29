@@ -54,6 +54,4 @@ def build_agent(env_info, **kwargs):
     return BehaviorCloneAgent(env_info, **kwargs)
 
 model = reconstruct_policy("dagger_policy_ckpts/hit_bc_policy_3.pt").cpu()
-
-
-custom_evaluate(build_agent, 'some_folder/', ['3dof-hit'], 1, 1, model=model, device='cpu', render=True, n_plot=2, maybe_generate_trajs=False)
+custom_evaluate(build_agent, 'some_folder/', ['3dof-hit'], 5, 1, model=model, device='cpu', render=True, n_plot=2)

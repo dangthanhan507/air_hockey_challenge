@@ -25,7 +25,7 @@ PENALTY_POINTS = {"joint_pos_constr": 2, "ee_constr": 3, "joint_vel_constr": 1, 
                   "computation_time_middle": 1,  "computation_time_major": 2}
 
 def custom_evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed=None, generate_score=None,
-             quiet=True, render=False, n_plot=0, maybe_generate_trajs=False, **kwargs):
+             quiet=True, render=False, n_plot=0, **kwargs):
     """
     WILL ALSO RETURN A TRANSITIONS OBJECT
 
@@ -75,7 +75,7 @@ def custom_evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-
 
         # returns: dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations, metric_dict
         data = Parallel(n_jobs=n_cores)(delayed(_evaluate)(path, env, agent_builder, chunks[i], quiet, render,
-                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i, n_plot, maybe_generate_trajs,
+                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i, n_plot,
                                                            **kwargs) for i in range(n_cores))
         print(f"DATA: {data}")
 
@@ -199,7 +199,7 @@ def custom_evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-
         os.system("chmod -R 777 {}".format(log_dir))
 
 
-def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_offset, seed, i, n_plot, maybe_generate_trajs, **kwargs):
+def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_offset, seed, i, n_plot, **kwargs):
     if seed is not None:
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -212,7 +212,7 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     baseline_agent = build_baseline_agent(mdp.env_info, **kwargs)
     core = ChallengeCore(agent, mdp)
 
-    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, baseline_agent, eval_params, episode_offset, n_plot, maybe_generate_trajs)
+    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, baseline_agent, eval_params, episode_offset, n_plot)
 
     logger = Logger(log_name=env, results_dir=log_dir, seed=i)
 
@@ -224,7 +224,7 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     return success, penalty_sum, violations, constraints_dict.keys(), n_steps
 
 
-def compute_metrics(core, baseline_agent, eval_params, episode_offset, n_plot=0, maybe_generate_trajs=False):
+def compute_metrics(core, baseline_agent, eval_params, episode_offset, n_plot=0):
     dataset, dataset_info = core.evaluate(**eval_params, get_env_info=True)
     # print(f"DATASET LEN: {len(dataset)}")
     
@@ -249,6 +249,7 @@ def compute_metrics(core, baseline_agent, eval_params, episode_offset, n_plot=0,
             b_x, b_y, b_z = [], [], []
             b_x_vel, b_y_vel, b_z_vel = [], [], []
 
+            baseline_agent.reset()
             for i, data in enumerate(episode_data):
                 action = data[1]
                 x.append(action[0,0])
@@ -260,8 +261,6 @@ def compute_metrics(core, baseline_agent, eval_params, episode_offset, n_plot=0,
                 z_vel.append(action[1,2])
 
                 if n_plot == 2:
-                    print("Iteration", i)
-                    baseline_agent.reset()
                     obs = data[0]
                     action = baseline_agent.draw_action(obs)
                     b_x.append(action[0,0])
@@ -273,34 +272,40 @@ def compute_metrics(core, baseline_agent, eval_params, episode_offset, n_plot=0,
 
             plt.subplot(231)
             plt.title("X")
-            plt.plot(np.arange(episode_len), np.array(x))
+            plt.plot(np.arange(episode_len), np.array(x), label="Policy")
             if n_plot == 2:
-                plt.plot(np.arange(episode_len), np.array(b_x))
+                plt.plot(np.arange(episode_len), np.array(b_x), label="Baseline")
+            plt.legend()
             plt.subplot(232)
             plt.title("Y")
-            plt.plot(np.arange(episode_len), np.array(y))
+            plt.plot(np.arange(episode_len), np.array(y), label="Policy")
             if n_plot == 2:
-                plt.plot(np.arange(episode_len), np.array(b_y))
+                plt.plot(np.arange(episode_len), np.array(b_y), label="Baseline")
+            plt.legend()
             plt.subplot(233)
             plt.title("Z")
-            plt.plot(np.arange(episode_len), np.array(z))
+            plt.plot(np.arange(episode_len), np.array(z), label="Policy")
             if n_plot == 2:
-                plt.plot(np.arange(episode_len), np.array(b_z))
+                plt.plot(np.arange(episode_len), np.array(b_z), label="Baseline")
+            plt.legend()
             plt.subplot(234)
             plt.title("X vel")
-            plt.plot(np.arange(episode_len), np.array(x_vel))
+            plt.plot(np.arange(episode_len), np.array(x_vel), label="Policy")
             if n_plot == 2:
-                plt.plot(np.arange(episode_len), np.array(b_x_vel))
+                plt.plot(np.arange(episode_len), np.array(b_x_vel), label="Baseline")
+            plt.legend()
             plt.subplot(235)
             plt.title("Y vel")
-            plt.plot(np.arange(episode_len), np.array(y_vel))
+            plt.plot(np.arange(episode_len), np.array(y_vel), label="Policy")
             if n_plot == 2:
-                plt.plot(np.arange(episode_len), np.array(b_y_vel))
+                plt.plot(np.arange(episode_len), np.array(b_y_vel), label="Baseline")
+            plt.legend()
             plt.subplot(236)
             plt.title("Z vel")
-            plt.plot(np.arange(episode_len), np.array(z_vel))
+            plt.plot(np.arange(episode_len), np.array(z_vel), label="Policy")
             if n_plot == 2:
-                plt.plot(np.arange(episode_len), np.array(b_z_vel))
+                plt.plot(np.arange(episode_len), np.array(b_z_vel), label="Baseline")
+            plt.legend()
             plt.savefig(f"evaluate_plots/episode_{current_idx}.jpg")
             plt.clf()
 
@@ -338,32 +343,10 @@ def compute_metrics(core, baseline_agent, eval_params, episode_offset, n_plot=0,
         current_idx += episode_len
         current_eps += 1
 
-    if maybe_generate_trajs:
-        states, actions, next_states, step_infos, dones = [], [], [], [], []
-        for data in dataset:
-            (state, action, _, next_state, _, last) = data 
-            states.append(state)
-            actions.append(action)
-            next_states.append(next_state)
-            dones.append(last)
-        for i in range(len(states)):
-            step_infos.append(dataset_info)
-        log_training_data(states, actions, next_states, dones, step_infos)
-
     success = success / n_episodes
 
     return dataset, success, penalty_sum, constraints_dict, dataset_info["jerk"], dataset_info["computation_time"], violations
 
-def log_training_data(obs, actions, next_actions, dones, info):
-    with open("training_data.pkl", "wb") as f:
-        data = {
-                "obs": np.stack(obs),
-                "actions": np.stack(actions),
-                "next_obs": np.stack(next_actions),
-                "dones": np.stack(dones),
-                "info": np.stack(info)
-        }
-        pickle.dump(data, f)
 
 def compute_seed(seed, i):
     if seed is not None:
