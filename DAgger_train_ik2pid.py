@@ -168,6 +168,7 @@ class BaselineAgentPolicy(HardCodedPolicy):
         ee_pos, _ = forward_kinematics(self.env.env_info['robot']['robot_model'], self.env.env_info['robot']['robot_data'], joint_pos)
         ee_pos[0] -= 1.51
         chosen_action[0:3] = ee_pos
+        # print("Baseline chosen action:", chosen_action)
         return chosen_action
        
 
@@ -215,7 +216,7 @@ if __name__ == '__main__':
             bc_trainer=bc_trainer,
             rng=rng,
         )
-        dagger_trainer.train(80_000)
+        dagger_trainer.train(5_000)
 
 
         #SAVE MODEL
