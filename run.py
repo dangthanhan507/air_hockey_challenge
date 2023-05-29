@@ -122,5 +122,6 @@ if __name__ == "__main__":
     config.update(filtered_args)
     config["env_list"] = convert_envs(config["env"])
     del config["env"]
+    print(config)
 
-    evaluate(build_agent, **config)
+    evaluate(build_agent, maybe_generate_trajs=True, **config)

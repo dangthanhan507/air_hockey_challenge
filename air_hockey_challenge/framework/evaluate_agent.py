@@ -3,6 +3,7 @@ import gc
 import itertools
 import json
 import os
+import pickle
 from collections import defaultdict
 
 import numpy as np
@@ -20,7 +21,7 @@ PENALTY_POINTS = {"joint_pos_constr": 2, "ee_constr": 3, "joint_vel_constr": 1, 
 
 
 def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed=None, generate_score=None,
-             quiet=True, render=False, **kwargs):
+             quiet=True, render=False, maybe_generate_trajs=False, **kwargs):
     """
     Function that will run the evaluation of the agent for a given set of environments. The resulting Dataset and
     constraint stats will be written to folder specified in log_dir. The resulting Dataset can be replayed by the
@@ -68,7 +69,7 @@ def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed
 
         # returns: dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations, metric_dict
         data = Parallel(n_jobs=n_cores)(delayed(_evaluate)(path, env, agent_builder, chunks[i], quiet, render,
-                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i,
+                                                           sum([len(x) for x in chunks[:i]]), compute_seed(seed, i), i, maybe_generate_trajs,
                                                            **kwargs) for i in range(n_cores))
 
         logger = Logger(log_name=env, results_dir=path)
@@ -190,7 +191,7 @@ def evaluate(agent_builder, log_dir, env_list, n_episodes=1080, n_cores=-1, seed
 
         os.system("chmod -R 777 {}".format(log_dir))
 
-def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_offset, seed, i, **kwargs):
+def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_offset, seed, i, maybe_generate_trajs, **kwargs):
     if seed is not None:
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -202,7 +203,7 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     agent = agent_builder(mdp.env_info, **kwargs)
     core = ChallengeCore(agent, mdp)
 
-    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, eval_params, episode_offset)
+    dataset, success, penalty_sum, constraints_dict, jerk, computation_time, violations = compute_metrics(core, eval_params, episode_offset, maybe_generate_trajs)
 
     logger = Logger(log_name=env, results_dir=log_dir, seed=i)
 
@@ -214,7 +215,7 @@ def _evaluate(log_dir, env, agent_builder, init_states, quiet, render, episode_o
     return success, penalty_sum, violations, constraints_dict.keys(), n_steps
 
 
-def compute_metrics(core, eval_params, episode_offset):
+def compute_metrics(core, eval_params, episode_offset, maybe_generate_trajs):
     dataset, dataset_info = core.evaluate(**eval_params, get_env_info=True)
 
     episode_length = compute_episodes_length(dataset)
@@ -263,9 +264,33 @@ def compute_metrics(core, eval_params, episode_offset):
         current_idx += episode_len
         current_eps += 1
 
+    if maybe_generate_trajs:
+        states, actions, next_states, step_infos, dones = [], [], [], [], []
+        for data in dataset:
+            (state, action, _, next_state, _, last) = data 
+            states.append(state)
+            actions.append(action)
+            next_states.append(next_state)
+            dones.append(last)
+        for i in range(len(states)):
+            step_infos.append(dataset_info)
+        log_training_data(states, actions, next_states, dones, step_infos)
+
     success = success / n_episodes
 
     return dataset, success, penalty_sum, constraints_dict, dataset_info["jerk"], dataset_info["computation_time"], violations
+
+
+def log_training_data(obs, actions, next_actions, dones, info):
+    with open("training_data.pkl", "wb") as f:
+        data = {
+                "obs": np.stack(obs),
+                "actions": np.stack(actions),
+                "next_obs": np.stack(next_actions),
+                "dones": np.stack(dones),
+                "info": np.stack(info)
+        }
+        pickle.dump(data, f)
 
 
 def compute_seed(seed, i):
