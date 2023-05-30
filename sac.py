@@ -135,12 +135,15 @@ if __name__ == '__main__':
     MAYBE_USE_CUDA = torch.cuda.is_available() 
 
     mdp = AirHockeyChallengeWrapper(env="3dof-hit", action_type="position-velocity", interpolation_order=3, custom_reward_function=an_reward, debug=True)
-    # mdp.info.action_space.low = np.array([-2.967060, -1.8, -2.094395, -1.570796, -1.570796, -2.094395])
-    # mdp.info.action_space.high = np.array([2.967060, 1.8, 2.094395, 1.570796, 1.570796, 2.094395])
+    jnt_range = mdp.base_env.env_info['robot']['robot_model'].jnt_range
+    vel_range = mdp.base_env.env_info['robot']['joint_vel_limit'].T * 0.95
+
+    low = np.hstack((jnt_range[:,0][:,np.newaxis], vel_range[:,0][:,np.newaxis])).flatten()
+    high = np.hstack((jnt_range[:,1][:,np.newaxis], vel_range[:,1][:,np.newaxis])).flatten()
     input_shape = mdp.info.observation_space.shape
     output_shape = (6,)
 
-    layer_width = 10 
+    layer_width = 64 
     actor_mu_params = dict(network=ActionGenerator,
                            layer_width=layer_width,
                            input_shape=input_shape,
@@ -180,6 +183,8 @@ if __name__ == '__main__':
                     'warmup_transitions':100,
                     'tau': 0.001, #tau = soft update coefficient
                     'lr_alpha': 3e-4,
+                        'low': low,
+                        'high': high
                    }
     sac = SAC(**algorithm_params)
     core = CustomChallengeCore(sac, mdp)
