@@ -169,6 +169,7 @@ class AirHockeyACPolicy(ActorCriticPolicy):
         lr_schedule: Callable[[float], float] = lambda _: th.finfo(th.float32).max,
         exclude_robot_obs=False,
         bigger_network=False,
+        load_path=None,
         *args,
         **kwargs,
     ):
@@ -184,6 +185,9 @@ class AirHockeyACPolicy(ActorCriticPolicy):
         )
         # Disable orthogonal initialization
         self.ortho_init = False
+        
+        if load_path is not None:
+            self.policy = th.load(load_path)
 
     def _build_mlp_extractor(self) -> None:
         if self.bigger_network:

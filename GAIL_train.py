@@ -20,6 +20,8 @@ from imitation.util.networks import RunningNorm
 
 from imitation.data.types import Transitions
 
+import argparse
+
 '''
     Notes:
     =======
@@ -29,6 +31,15 @@ from imitation.data.types import Transitions
             -> play with structure of that network  
 '''
 if __name__ == '__main__':
+    
+    
+    #ARGUMENTS
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--policy", type=str, default="")
+    parser.add_argument("-e", "--exclude_robot_obs"  ,type=bool, default=False)
+    args = parser.parse_args()
+    
+    
     env = CustomEnv('3dof-hit')
 
     venv = DummyVecEnv([lambda: CustomEnv('3dof-hit')])
@@ -52,7 +63,6 @@ if __name__ == '__main__':
 
     transitions = Transitions(obs=obs, acts=actions, infos=info, next_obs=next_obs, dones=dones)
 
-    # custom_policy = AirHockeyACPolicy(env.observation_space, env.action_space, exclude_robot_obs=True)
     custom_policy = AirHockeyACPolicy
     # learner = PPO(env=venv, 
     #               policy=custom_policy.cpu(),
@@ -70,8 +80,8 @@ if __name__ == '__main__':
     #               clip_range_vf=1)
     
     learner = PPO(policy=custom_policy, env=venv, n_steps=64,
-                  policy_kwargs={'exclude_robot_obs': True},
-                  device='cpu')
+                  policy_kwargs={'exclude_robot_obs': args.exclude_robot_obs, 'bigger_network': True, 'load_path': args.policy},
+                  device='cuda:0')
 
     
 
