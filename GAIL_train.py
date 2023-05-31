@@ -30,6 +30,8 @@ import argparse
         -> We are learning a reward network.
             -> play with structure of that network  
 '''
+
+
 if __name__ == '__main__':
     
     
@@ -64,6 +66,9 @@ if __name__ == '__main__':
     transitions = Transitions(obs=obs, acts=actions, infos=info, next_obs=next_obs, dones=dones)
 
     custom_policy = AirHockeyACPolicy
+
+
+    # full PPO tuning shit
     # learner = PPO(env=venv, 
     #               policy=custom_policy.cpu(),
     #               device='cpu',
@@ -88,7 +93,7 @@ if __name__ == '__main__':
 
     gail_trainer = GAIL(
         demonstrations=transitions,
-        demo_batch_size=1024,
+        demo_batch_size=4096,
         gen_replay_buffer_capacity=2048,
         n_disc_updates_per_round=4,
         venv=venv,
@@ -104,4 +109,4 @@ if __name__ == '__main__':
     if not policy_ckpt_dir.exists():
         policy_ckpt_dir.mkdir(parents=True, exist_ok=False)
     n_files = len([_ for _ in policy_ckpt_dir.iterdir()])
-    gail_trainer.save_policy(f"gail_policy_chkpts/hit_bc_policy_{n_files + 1}.pt")
+    torch.save(gail_trainer.policy,f"gail_policy_chkpts/hit_bc_policy_{n_files + 1}.pt")
