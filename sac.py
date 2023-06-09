@@ -66,27 +66,51 @@ def an_reward(base_env, state, action, next_state, absorbing):
 
     return reward_value
 
-
+dagger_ckpt_path = "./dagger_policy_ckpts/hit_bc_policy_sac.pt"
 class ActionGenerator(nn.Module):
     def __init__(self, input_dim, output_dim, layer_width, use_cuda = False, dropout=False, activation = nn.LeakyReLU(0.1) ):
         super().__init__()
         
         num_layers = 20
-        
+
         input_dim = input_dim[0]
         output_dim = output_dim[0]
-        
-        layers = [nn.Linear(input_dim, layer_width), activation]
-        for i in range(num_layers-1):
-            layers.append(nn.Linear(layer_width, layer_width))
-            layers.append(activation)
-        layers.append(nn.Linear(layer_width, output_dim))
-        layers.append(activation)
-        
-        self.model = nn.Sequential(*layers)
+
+        # layers = [nn.Linear(input_dim, layer_width), activation]
+        # for i in range(num_layers-1):
+        #     layers.append(nn.Linear(layer_width, layer_width))
+        #     layers.append(activation)
+        # layers.append(nn.Linear(layer_width, output_dim))
+        # layers.append(activation)
+        #
+        # self.model = nn.Sequential(*layers)
+        # print("Original:", self.model)
+
+        self.feature_extractor = nn.Sequential(
+            nn.Linear(input_dim, 32), nn.ReLU(),
+            nn.Linear(32, 64), nn.ReLU(),
+            nn.Linear(64, 128), nn.ReLU(),
+            nn.Linear(128, 256), nn.ReLU(),
+            nn.Linear(256, 512), nn.ReLU(),
+            nn.Linear(512, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 512), nn.ReLU(),
+            nn.Linear(512, 256), nn.ReLU(),
+            nn.Linear(256, 128), nn.ReLU(),
+            nn.Linear(128, 64), nn.ReLU(),
+            nn.Linear(64, 32), activation 
+        )
+        self.model = nn.Linear(32, output_dim)
+
+        dagger_policy = torch.load(dagger_ckpt_path, map_location=torch.device("cpu")).cpu()
+        self.feature_extractor.load_state_dict(dagger_policy.mlp_extractor.policy_net.state_dict())
+        self.model.load_state_dict(dagger_policy.action_net.state_dict())
         
     def forward(self, obs):
-        out = self.model(obs.float())
+        out = self.feature_extractor(obs.float())
+        out = self.model(out)
         return out
 
 class CriticNetwork(nn.Module):
@@ -101,35 +125,56 @@ class CriticNetwork(nn.Module):
         
         input_dim = input_shape[0]
         output_dim = 1
-        for i in output_shape: 
-            output_dim *= i
+        # for i in output_shape: 
+        #     output_dim *= i
+        # 
+        # self.output_shape = output_shape
+        # activation = nn.LeakyReLU(0.1)
+        # 
+        # if 'num_layers' in kwargs.keys():
+        #     num_layers = kwargs['num_layers']
+        # else:
+        #     num_layers = 20
+        # 
+        # if 'layer_width' in kwargs.keys():
+        #     layer_width = kwargs['layer_width']
+        # else:
+        #     layer_width = 10
+        # 
+        # 
+        # layers = [nn.Linear(input_dim, layer_width), activation]
+        # for i in range(num_layers-1):
+        #     layers.append(nn.Linear(layer_width, layer_width))
+        #     layers.append(activation)
+        # layers.append(nn.Linear(layer_width, output_dim))
+        # layers.append(activation)
+        # self.model = nn.Sequential(*layers)
         
-        self.output_shape = output_shape
-        activation = nn.LeakyReLU(0.1)
-        
-        if 'num_layers' in kwargs.keys():
-            num_layers = kwargs['num_layers']
-        else:
-            num_layers = 20
-        
-        if 'layer_width' in kwargs.keys():
-            layer_width = kwargs['layer_width']
-        else:
-            layer_width = 10
-        
-        
-        layers = [nn.Linear(input_dim, layer_width), activation]
-        for i in range(num_layers-1):
-            layers.append(nn.Linear(layer_width, layer_width))
-            layers.append(activation)
-        layers.append(nn.Linear(layer_width, output_dim))
-        layers.append(activation)
-        
-        self.model = nn.Sequential(*layers)
+        self.feature_extractor = nn.Sequential(
+            nn.Linear(input_dim, 32), nn.ReLU(),
+            nn.Linear(32, 64), nn.ReLU(),
+            nn.Linear(64, 128), nn.ReLU(),
+            nn.Linear(128, 256), nn.ReLU(),
+            nn.Linear(256, 512), nn.ReLU(),
+            nn.Linear(512, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 1024), nn.ReLU(),
+            nn.Linear(1024, 512), nn.ReLU(),
+            nn.Linear(512, 256), nn.ReLU(),
+            nn.Linear(256, 128), nn.ReLU(),
+            nn.Linear(128, 64), nn.ReLU(),
+            nn.Linear(64, 32), nn.ReLU()        )
+        self.model = nn.Linear(32, output_dim)
+        dagger_policy = torch.load(dagger_ckpt_path, map_location=torch.device("cpu")).cpu()
+        self.feature_extractor.load_state_dict(dagger_policy.mlp_extractor.value_net.state_dict())
+        self.model.load_state_dict(dagger_policy.value_net.state_dict())
         
     def forward(self, state, action):
-        state_action = torch.cat((state.float(), action.float()), dim=1)
-        out = self.model(state_action.float()) #reshape into a tensor of classes representing pos/vel
+        # state_action = torch.cat((state.float(), action.float()), dim=1)
+        # out = self.feature_extractor(state_action.float()) #reshape into a tensor of classes representing pos/vel
+        out = self.feature_extractor(state.float()) #reshape into a tensor of classes representing pos/vel
+        out = self.model(out)
             
         return out.T
 
@@ -209,7 +254,7 @@ if __name__ == '__main__':
             }
 
     # critic network
-    critic_input_shape = 12+6
+    critic_input_shape = 12
     critic_params = dict(
             network=CriticNetwork,
             layer_width=layer_width,
@@ -242,6 +287,6 @@ if __name__ == '__main__':
         core.learn(n_episodes=1000, n_episodes_per_fit=100, render=False)
         sac.save("sac_weights_1000.msh")
     else:
-        sac.load("sac_weights_1000.msh")
+        sac.load("sac_weights_transfer.msh")
         # core.evaluate(n_episodes=5, render=True) 
-        custom_evaluate(build_agent, 'some_folder/', ['3dof-hit'], 5, 1, model=sac, device='cpu', render=True, n_plot=1)
+        custom_evaluate(build_agent, 'some_folder/', ['3dof-hit'], 6, 1, model=sac, device='cpu', render=True, n_plot=2)
